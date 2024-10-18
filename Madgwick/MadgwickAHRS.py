@@ -6,7 +6,7 @@ class MadgwickFilter:
     """This class implements the Madgwick filter for orientation tracking. It performs
     sensor fusion of accelerometer, gyroscope and magnetometer data."""
 
-    def __init__(self, Hz = 100) -> None:
+    def __init__(self, Hz = 100):
         
         self.Hz = Hz
         self.dt = 1/self.Hz
@@ -44,7 +44,7 @@ class MadgwickFilter:
         # Get the direction of the magnetic field in the  Earth frame
         # Here we assume that the Earth's magnetic field has componenets in one horizontal axis and the vertical axis.
         h = q * magnet_quat * q.conjugate
-        b = [0, np.linalg.norm(h[1:3]), 0, h[3]]
+        b = [0, np.linalg.norm([h[1], h[2]]), 0, h[3]]
 
         # Now we calculate one step of gradient descent
         
@@ -63,23 +63,37 @@ class MadgwickFilter:
                       [2 * b[1] * q[2], 2 * b[1] * q[3] - 4 * b[3] * q[1], 2 * b[1] * q[0] - 4 * b[3] * q[2], 2 * b[1] * q[1]]])
         
         step = J.T @ F
-        step = step / np.lingalg.norm(step)
+        step = step / np.linalg.norm(step)
+        # step_quat = pq.Quaternion(step)
 
         # Computer gyro drift bias
         gyro_errors = 2 * q.conjugate * step
-        self.g_bias += self.zeta * gyro_errors[1:] * dt
+        self.g_bias += self.zeta * np.array([gyro_errors[1],gyro_errors[2],gyro_errors[3]]) * dt
         
         gyro = gyro - self.g_bias
         gyro_quat = pq.Quaternion([0, gyro[0], gyro[1], gyro[2]])
 
         # Calculate the rate of change
-        qDot = 0.5 * q * gyro_quat - self.beta * step.T
+        qDot = 0.5 * q * gyro_quat - self.beta * step
 
         # Finally, integrate
         q = q + qDot*dt
-        q = q / np.linalg.norm(q)
+        q = q.normalised
 
         # Finally update the position of earth in the sensor frame
         self.earth_in_sensor = q
 
-        return q.conjugate
+        return q, q.conjugate
+    
+if __name__ == "__main__":
+
+    # test the filter with dummy data
+    MF = MadgwickFilter()
+
+    gyro = np.array([0.1,0,0.2])
+    acc = np.array([0.05, 0.2, 0.3])
+    magnet = np.array([1,0.5,0.2])
+
+    e2s, s2e = MF.update(gyro, acc, magnet)
+    print(e2s, s2e)
+
